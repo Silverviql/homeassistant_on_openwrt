@@ -296,7 +296,7 @@ tar -zxf hass-nabucasa-${NABUCASA_VER}.tar.gz
 cd hass-nabucasa-${NABUCASA_VER}
 sed -i 's/[<=>]=.*"/"/' setup.py
 rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/hass_nabucasa-*.egg
-pip3 install . --no-cache-dir -c /tmp/owrt_constraints.txt
+pip3 install . --no-cache-dir -c /tmp/owrt_constraints.txt discernible
 cd ..
 rm -rf hass-nabucasa-${NABUCASA_VER}.tar.gz hass-nabucasa-${NABUCASA_VER}
 
@@ -580,9 +580,12 @@ if [ $NEED_ZHA ]; then
   sed -i 's/"zigpy-deconz==[0-9\.]*",//i' zha/manifest.json
   sed -i 's/"zigpy-xbee==[0-9\.]*",//i' zha/manifest.json
   sed -i 's/"zigpy-znp==[0-9\.]*",//i' zha/manifest.json
-  sed -i 's/"universal-silabs-flasher==[0-9\.]*",//i' zha/manifest.json
+  sed -i 's/"universal-silabs-flasher==[0-13\.]*",//i' zha/manifest.json
 
-  sed -i -E -e 's/import (zigpy_deconz|zigpy_cc|zigpy_xbee|zigpy_znp|zigpy_zigate).*application/# \0/' -e 's/([ ]*)(zigpy_deconz|zigpy_cc|zigpy_xbee|zigpy_znp|zigpy_zigate)\.ControllerApplication,/\1None # \2/g' zha/core/const.py
+  # Fix RadioType to exclude zigpy_znp and keep bellows
+  sed -i -E -e 's/import (zigpy_deconz|zigpy_cc|zigpy_xbee|zigpy_znp|zigpy_zigate).*application/# \0/' zha/core/const.py
+  sed -i -E -e 's/([ ]*)(zigpy_deconz|zigpy_cc|zigpy_xbee|zigpy_znp|zigpy_zigate)\.ControllerApplication,/\1None # \2/g' zha/core/const.py
+  sed -i -E -e 's/zigpy_znp\.zigbee\.application\.ControllerApplication,/None,/' zha/core/const.py
   sed -i -E 's/"(zigpy_deconz|zigpy_xbee|zigpy_znp|zigpy_zigate)":/# "\1":/' zha/diagnostics.py
   sed -i -e '/from homeassistant.components.homeassistant_hardware.silabs_multiprotocol_addon/,/] = 15/d' zha/core/gateway.py
   sed -i 's/    RadioType\./    # RadioType./' zha/radio_manager.py
@@ -612,7 +615,7 @@ sed -i 's/"cloud",//' default_config/manifest.json
 sed -i 's/"dhcp",//' default_config/manifest.json
 sed -i 's/"mobile_app",//' default_config/manifest.json
 sed -i 's/"updater",//' default_config/manifest.json
-sed -i 's/"usb",//' default_config/manifest.json
+sed -i 's/"usb",//' default_config
 sed -i 's/"bluetooth",//' default_config/manifest.json
 sed -i 's/"assist_pipeline",//' default_config/manifest.json
 sed -i 's/"stream",//' default_config/manifest.json
@@ -695,6 +698,9 @@ recorder:
       - sensor.*humidity_*
       - sensor.*presence_*
       - light.*
+
+zha:
+  zigbee_device: /dev/ttyUSB0
 
 panel_iframe:
   configurator:
