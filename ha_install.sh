@@ -183,7 +183,7 @@ rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/botocore/data
 find /usr/lib/python${PYTHON_VERSION}/site-packages/numpy -iname tests -print0 | xargs -0 rm -rf
 
 echo "Install base requirements from PyPI..."
-Pip3 install --no-cache-dir wheel
+pip3 install --no-cache-dir wheel
 pip3 freeze > /tmp/freeze.txt
 grep -E 'aiohttp|async-timeout|crypto|YAML' /tmp/freeze.txt > /tmp/owrt_constraints.txt
 
