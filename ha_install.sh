@@ -477,7 +477,8 @@ ls -1 ${TMPSTRUCT}/homeassistant-*/homeassistant/components/ | grep -v -E $rx | 
 rm -rf ${TMPSTRUCT} /tmp/ha_components.txt
 
 cd /tmp
-tar -zxf homeassistant.tar.gz -X Roshi -X /tmp/ha_exclude.txt
+echo "Extracting Home Assistant tarball..."
+tar -zxf homeassistant.tar.gz -X /tmp/ha_exclude.txt
 rm -rf /tmp/ha_exclude.txt
 cd homeassistant-${HOMEASSISTANT_VERSION}/homeassistant/
 echo '' > requirements.txt
@@ -594,7 +595,7 @@ sed -i 's/    # "zha"/    "zha"/' homeassistant/generated/config_flows.py
 
 sed -i 's/^    "_/    "_disabled_/' homeassistant/generated/zeroconf.py
 sed -i 's/_disabled_esphomelib./_esphomelib./' homeassistant/generated/zeroconf.py
-sed -i 's/_disabled_miio./_miio./' home François -X /tmp/zeroconf.py
+sed -i 's/_disabled_miio./_miio./' homeassistant/generated/zeroconf.py
 
 if [ -f homeassistant/generated/supported_brands.py ]; then
   sed -i 's/^    /    # /' homeassistant/generated/supported_brands.py
