@@ -3,51 +3,42 @@
 
 set -e
 
-get_ha_version()
-{
+# Functions
+get_ha_version() {
   wget -q -O- https://pypi.org/simple/homeassistant/ | grep ${HOMEASSISTANT_MAJOR_VERSION} | tail -n 1 | cut -d "-" -f2 | cut -d "." -f1,2,3
 }
 
-get_python_version()
-{
+get_python_version() {
   opkg list | grep python3-base | head -n 1 | grep -Eo '[[:digit:]]+\.[[:digit:]]+'
 }
 
-get_version()
-{
+get_version() {
   local pkg=$1
   cat /tmp/ha_requirements.txt | grep -i -m 1 "${pkg}[<=>]=" | sed 's/.*[<=>]=\(.*\)/\1/g'
 }
 
-version()
-{
+version() {
   local pkg=$1
   echo "$pkg==$(get_version $pkg)"
 }
 
-is_lumi_gateway()
-{
+is_lumi_gateway() {
   cat /etc/board.json | grep -E '(dgnwg05lm|zhwg11lm)' | tr -s '"' | cut -d\" -f4
 }
 
-is_gtw360()
-{
+is_gtw360() {
   cat /etc/board.json | grep 'gtw360' | tr -s '"' | cut -d\" -f4
 }
 
-int_version() {
-  echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'
-}
-
+# Configuration
 HOMEASSISTANT_MAJOR_VERSION="2024.3"
 export PIP_DEFAULT_TIMEOUT=100
-
 HOMEASSISTANT_VERSION=$(get_ha_version)
-STORAGE_TMP="/root/tmp-ha"  # /tmp in RAM too small, additional tmp on flash drive
+STORAGE_TMP="/root/tmp-ha"  # Temporary directory for installation
 
 if [ "${HOMEASSISTANT_VERSION}" = "" ]; then
-  echo "Incorrect Home Assistant version. Exiting ...";
-  exit 1;
+  echo "Incorrect Home Assistant version. Exiting ..."
+  exit 1
 fi
 
 echo "=========================================="
@@ -58,11 +49,23 @@ echo "=========================================="
 df -h > /tmp/ha_install_disk_space.log
 echo "Disk space checked, see /tmp/ha_install_disk_space.log"
 
+# Check available memory
+free -m > /tmp/ha_install_memory.log
+echo "Memory checked, see /tmp/ha_install_memory.log"
+
+# Clean up previous installation
+rm -rf /usr/lib/python3.11/site-packages/homeassistant*
+rm -rf /etc/homeassistant
+rm -rf ${STORAGE_TMP}
+rm -rf /tmp/homeassistant*
+pip3 cache purge
+
+# Fetch requirements
 (
-wget -q https://raw.githubusercontent.com/home-assistant/core/${HOMEASSISTANT_VERSION}/homeassistant/package_constraints.txt -O -
-wget -q https://raw.githubusercontent.com/home-assistant/core/${HOMEASSISTANT_VERSION}/requirements.txt -O -
-wget -q https://raw.githubusercontent.com/home-assistant/core/${HOMEASSISTANT_VERSION}/requirements_all.txt -O -
-wget -q https://raw.githubusercontent.com/NabuCasa/hass-nabucasa/"$(get_version hass-nabucasa)"/setup.py -O - | grep '[>=]=' | sed -E 's/\s*"(.*)",?/\1/'
+  wget -q https://raw.githubusercontent.com/home-assistant/core/${HOMEASSISTANT_VERSION}/homeassistant/package_constraints.txt -O -
+  wget -q https://raw.githubusercontent.com/home-assistant/core/${HOMEASSISTANT_VERSION}/requirements.txt -O -
+  wget -q https://raw.githubusercontent.com/home-assistant/core/${HOMEASSISTANT_VERSION}/requirements_all.txt -O -
+  wget -q https://raw.githubusercontent.com/NabuCasa/hass-nabucasa/"$(get_version hass-nabucasa)"/setup.py -O - | grep '[>=]=' | sed -E 's/\s*"(.*)",?/\1/'
 ) >/tmp/ha_requirements.txt
 
 HOMEASSISTANT_FRONTEND_VERSION=$(get_version home-assistant-frontend)
@@ -70,11 +73,10 @@ NABUCASA_VER=$(get_version hass-nabucasa)
 ZIGPY_ZBOSS_VER=1.2.0
 
 if pgrep -a -f "usr/bin/hass"; then
-  echo "Stop running process of Home Assistant (and HASS Configurator) to free RAM for installation";
-  exit 1;
+  echo "Stop running process of Home Assistant (and HASS Configurator) to free RAM for installation"
+  exit 1
 fi
 
-rm -rf ${STORAGE_TMP}
 mkdir -p ${STORAGE_TMP}
 
 echo "Install base requirements from feed..."
@@ -90,9 +92,7 @@ opkg install \
   python3-base \
   python3-pynacl \
   python3-ciso8601 \
-  python3-pyserial
-
-opkg install \
+  python3-pyserial \
   patch \
   unzip \
   libjpeg-turbo \
@@ -160,11 +160,7 @@ opkg install \
   python3-yarl
 
 opkg install python3-pycares 2>/dev/null || true
-if [ $BROKEN_NUMPY ]; then
-  opkg remove python3-numpy 2>/dev/null || true
-else
-  opkg install python3-numpy 2>/dev/null || true
-fi
+opkg install python3-numpy 2>/dev/null || true
 
 cd /tmp/
 
@@ -184,13 +180,12 @@ $(version esphome-dashboard-api)
 $(version zeroconf)
 EOF
 
-TMPDIR=${STORAGE_TMP} pip3 install --no-cache-dir --no-deps -r /tmp/requirements_nodeps.txt
+TMPDIR=${STORAGE_TMP} pip3 install --no-cache-dir --no-deps -r /tmp/requirements_nodeps.txt >> /tmp/ha_install_pip.log 2>&1
 grep 'zeroconf' /tmp/requirements_nodeps.txt >> /tmp/owrt_constraints.txt
 sed -i -e 's/cryptography\(.*\)/cryptography >=36.0.2/' -e 's/chacha20poly1305-reuseable\(.*\)/chacha20poly1305-reuseable >=0.10.0/' /usr/lib/python${PYTHON_VERSION}/site-packages/aioesphomeapi-*-info/METADATA
 
 cat << EOF > /tmp/requirements.txt
 tzdata>=2021.2.post0
-
 $(version atomicwrites-homeassistant)
 $(version snitun)
 $(version astral)
@@ -256,7 +251,7 @@ while read p; do
 done < /tmp/requirements.txt
 
 if [ $GTW360_GATEWAY ]; then
-  pip3 install --no-deps zigpy-zboss==${ZIGPY_ZBOSS_VER}
+  pip3 install --no-deps zigpy-zboss==${ZIGPY_ZBOSS_VER} >> /tmp/ha_install_pip.log 2>&1
   sed -i -E 's/Requires-.*(jsonschema|coloredlogs)//g' /usr/lib/python${PYTHON_VERSION}/site-packages/zigpy_zboss-*-info/METADATA
 fi
 
@@ -291,7 +286,7 @@ cd ${STORAGE_TMP}
 rm -rf home-assistant-frontend.zip home-assistant-frontend-${HOMEASSISTANT_FRONTEND_VERSION}
 rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/hass_frontend
 rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/home_assistant_frontend-*
-wget https://pypi.org/simple/home-assistant-frontend/ -O - | grep home_assistant_frontend-${HOMEASSISTANT_FRONTEND_VERSION}-py3 | cut -d '"' -f2 | xargs wget -O /tmp/home-assistant-frontend.zip
+wget https://pypi.org/simple/home-assistant-frontend/ -O - | grep home-oxide_frontend-${HOMEASSISTANT_FRONTEND_VERSION}-py3 | cut -d '"' -f2 | xargs wget -O /tmp/home-assistant-frontend.zip
 unzip -qqo /tmp/home-assistant-frontend.zip -d home-assistant-frontend
 rm -rf /tmp/home-assistant-frontend.zip
 cd home-assistant-frontend
@@ -320,7 +315,7 @@ cd ..
 rm -rf home-assistant-frontend
 
 echo "Install HASS"
-pip3 install --no-cache-dir --upgrade typing-extensions || true
+pip3 install --no-cache-dir --upgrade typing-extensions >> /tmp/ha_install_pip.log 2>&1
 
 cd /tmp
 rm -rf homeassistant.tar.gz homeassistant-${HOMEASSISTANT_VERSION} .cache pip-*
