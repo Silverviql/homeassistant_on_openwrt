@@ -296,7 +296,7 @@ tar -zxf hass-nabucasa-${NABUCASA_VER}.tar.gz
 cd hass-nabucasa-${NABUCASA_VER}
 sed -i 's/[<=>]=.*"/"/' setup.py
 rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/hass_nabucasa-*.egg
-pip3 install . --no-cache-dir -c /tmp/owrt_constraints.txt discernible
+pip3 install . --no-cache-dir -c /tmp/owrt_constraints.txt
 cd ..
 rm -rf hass-nabucasa-${NABUCASA_VER}.tar.gz hass-nabucasa-${NABUCASA_VER}
 
