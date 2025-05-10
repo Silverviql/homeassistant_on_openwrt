@@ -1,5 +1,5 @@
 #!/bin/sh
-# Homeassistant installer script by @devbis
+# Homeassistant installer script by @devbis, modified for SONOFF Zigbee 3.0 USB Dongle Plus-E
 
 get_ha_version()
 {
@@ -80,13 +80,14 @@ PYTHON_VERSION=$(get_python_version)
 echo "Detected Python ${PYTHON_VERSION}"
 LUMI_GATEWAY=$(is_lumi_gateway)
 GTW360_GATEWAY=$(is_gtw360)
-NEED_ZHA="$LUMI_GATEWAY$GTW360_GATEWAY"
+NEED_ZHA="true"  # Force ZHA for SONOFF Zigbee Dongle
 
 # Install them first to check Openlumi feed id added
 opkg install \
   python3-base \
   python3-pynacl \
-  python3-ciso8601
+  python3-ciso8601 \
+  python3-pyserial
 
 opkg install \
   patch \
@@ -201,13 +202,11 @@ $(version awesomeversion)
 $(version PyJWT)
 $(version voluptuous)
 $(version voluptuous-serialize)
-# $(version sqlalchemy)  # recorder requirement
 $(version ulid-transform)  # utils
 $(version packaging)
 $(version aiohttp-fast-url-dispatcher)
 $(version psutil-home-assistant)
 $(version async-interrupt)
-#$(version aiohttp-zlib-ng)
 
 # homeassistant manifest requirements
 $(version PyQRCode)
@@ -250,6 +249,7 @@ if [ $NEED_ZHA ]; then
 $(version pyserial)
 $(version zha-quirks)
 $(version zigpy)
+$(version bellows)
 EOF
 fi
 
@@ -259,7 +259,6 @@ $(version zigpy-zigate)
 EOF
 fi
 
-# TMPDIR=${STORAGE_TMP} pip3 install --no-cache-dir -c /tmp/owrt_constraints.txt -r /tmp/requirements.txt
 # install one-by-one to avoid memory issues
 cat /tmp/requirements.txt | sed -E 's/\[.*\]//g' >> /tmp/owrt_constraints.txt
 while read p; do
@@ -275,13 +274,13 @@ if [ $GTW360_GATEWAY ]; then
 fi
 
 if [ $NEED_ZHA ]; then
-  # show internal serial ports for Xiaomi Gateway
-  sed -i 's/ttyXRUSB\*/ttymxc[1-9]/' /usr/lib/python${PYTHON_VERSION}/site-packages/serial/tools/list_ports_linux.py
+  # Support USB Zigbee sticks like SONOFF
+  sed -i 's/ttyXRUSB\*/ttyUSB[0-9]*/' /usr/lib/python${PYTHON_VERSION}/site-packages/serial/tools/list_ports_linux.py
+  sed -i 's/ttyXRUSB\*/ttyACM[0-9]*/' /usr/lib/python${PYTHON_VERSION}/site-packages/serial/tools/list_ports_linux.py
   sed -i 's/if info.subsystem != "platform"]/]/' /usr/lib/python${PYTHON_VERSION}/site-packages/serial/tools/list_ports_linux.py
 fi
 
 # fix deps
-# shellcheck disable=SC2144
 if [ -f /usr/lib/python${PYTHON_VERSION}/site-packages/botocore-*-info/METADATA ]; then
   sed -i 's/urllib3 \(.*\)/urllib3 (>=1.20)/' /usr/lib/python${PYTHON_VERSION}/site-packages/botocore-*-info/METADATA
   sed -i 's/botocore \(.*\)/botocore (>=1.12.0)/' /usr/lib/python${PYTHON_VERSION}/site-packages/boto3-*-info/METADATA
@@ -484,12 +483,10 @@ xiaomi_miio
 yeelight
 zeroconf
 zone
+zha
 EOF
-if [ $NEED_ZHA ]; then
-  echo "zha" >> /tmp/ha_components.txt
-fi
 
-# create fake structure tu get full list of components in /tmp/t/
+# create fake structure to get full list of components in /tmp/t/
 TMPSTRUCT=${STORAGE_TMP}/t
 rm -rf ${TMPSTRUCT}
 cd ${STORAGE_TMP}
@@ -533,7 +530,6 @@ sed -i 's/pillow==[0-9\.]*/pillow/i' image_upload/manifest.json
 sed -i 's/, UnidentifiedImageError//' image_upload/__init__.py
 sed -i 's/except UnidentifiedImageError/except OSError/' image_upload/__init__.py
 sed -i 's/zeroconf==[0-9\.]*/zeroconf/i' zeroconf/manifest.json
-#sed -i 's/netdisco==[0-9\.]*/netdisco/' discovery/manifest.json
 sed -i 's/PyNaCl==[0-9\.]*/PyNaCl/i' mobile_app/manifest.json
 sed -i 's/defusedxml==[0-9\.]*/defusedxml/i' ssdp/manifest.json
 sed -i 's/netdisco==[0-9\.]*/netdisco/i' ssdp/manifest.json
@@ -560,7 +556,7 @@ sed -i -e 's/import mqtt/\0\nfrom .util import */g' -e 's/mqtt\.util\.//' mqtt/t
 sed -i 's/, "ffmpeg"//' tts/manifest.json
 sed -i 's/ ffmpeg,//' tts/__init__.py
 
-# drop matter requirement from google_assistant, it is a dependency for mobile_app
+# drop matter requirement from google_assistant
 sed -i -E 's/(\, *)?"matter"//' google_assistant/manifest.json
 
 # drop numpy dep from stream
@@ -570,7 +566,6 @@ sed -i -e 's/"ha-av[^"]*", //' -e 's/, "numpy[^"]*"//' stream/manifest.json
 if ( ! ls /usr/lib/python${PYTHON_VERSION}/site-packages/ | grep -q numpy ); then
   sed -i -e 's/import numpy as np/np = None/' -e 's/np\.ndarray/Any/g' -e 's/TRANSFORM_IMAGE_FUNCTION[orientation]//' stream/core.py
 fi
-#sed -i -e 's/import av/#/' -e 's/av.logging/#/' stream/__init__.py
 sed -i 's/import av/av = None/' stream/__init__.py
 sed -i 's/import av/av = None/' stream/worker.py
 sed -i 's/import av/av = None/' stream/recorder.py
@@ -580,18 +575,15 @@ sed -i 's/fnv-hash-fast==[0-9\.]*/fnvhash/i' recorder/manifest.json
 sed -i 's/from fnv_hash_fast/from fnvhash/' recorder/db_schema.py
 
 if [ $NEED_ZHA ]; then
-  # remove unwanted zha requirements
-  sed -i 's/"bellows==[0-9\.]*",//i' zha/manifest.json
+  # remove unwanted zha requirements except bellows
   sed -i 's/"zigpy-cc==[0-9\.]*",//i' zha/manifest.json
   sed -i 's/"zigpy-deconz==[0-9\.]*",//i' zha/manifest.json
   sed -i 's/"zigpy-xbee==[0-9\.]*",//i' zha/manifest.json
   sed -i 's/"zigpy-znp==[0-9\.]*",//i' zha/manifest.json
   sed -i 's/"universal-silabs-flasher==[0-9\.]*",//i' zha/manifest.json
-  sed -i 's/RadioType.ezsp/object()  # \0/' zha/__init__.py
 
-  sed -i -E -e 's/import (bellows|zigpy_deconz|zigpy_cc|zigpy_xbee|zigpy_znp|zigpy_zigate).*application/# \0/' -e 's/([ ]*)([a-z_.]*.ControllerApplication,)/\1None # \2/g' zha/core/const.py
-  sed -i -E 's/"(bellows|zigpy_deconz|zigpy_xbee|zigpy_znp|zigpy_zigate)":/# "\1":/' zha/diagnostics.py
-  # sed -i -E 's/import (bellows|zigpy_deconz|zigpy_xbee|zigpy_znp)/# import \1/' zha/diagnostics.py
+  sed -i -E -e 's/import (zigpy_deconz|zigpy_cc|zigpy_xbee|zigpy_znp|zigpy_zigate).*application/# \0/' -e 's/([ ]*)(zigpy_deconz|zigpy_cc|zigpy_xbee|zigpy_znp|zigpy_zigate)\.ControllerApplication,/\1None # \2/g' zha/core/const.py
+  sed -i -E 's/"(zigpy_deconz|zigpy_xbee|zigpy_znp|zigpy_zigate)":/# "\1":/' zha/diagnostics.py
   sed -i -e '/from homeassistant.components.homeassistant_hardware.silabs_multiprotocol_addon/,/] = 15/d' zha/core/gateway.py
   sed -i 's/    RadioType\./    # RadioType./' zha/radio_manager.py
   sed -i 's/from bellows.config import CONF_USE_THREAD/from .core.const import CONF_USE_THREAD/' zha/radio_manager.py
@@ -627,49 +619,35 @@ sed -i 's/"stream",//' default_config/manifest.json
 sed -i 's/==[0-9\.]*//g' frontend/manifest.json
 
 cd ../..
-# integrations and helper sections leave as is, only nested items
 sed -i 's/        "/        # "/' homeassistant/generated/config_flows.py
 sed -i 's/    # "mqtt"/    "mqtt"/' homeassistant/generated/config_flows.py
 sed -i 's/    # "esphome"/    "esphome"/' homeassistant/generated/config_flows.py
 sed -i 's/    # "met"/    "met"/' homeassistant/generated/config_flows.py
 sed -i 's/    # "radio_browser"/    "radio_browser"/' homeassistant/generated/config_flows.py
-if [ $NEED_ZHA ]; then
-  sed -i 's/    # "zha"/    "zha"/' homeassistant/generated/config_flows.py
-fi
+sed -i 's/    # "zha"/    "zha"/' homeassistant/generated/config_flows.py
 
-# disabling all zeroconf services
 sed -i 's/^    "_/    "_disabled_/' homeassistant/generated/zeroconf.py
-# re-enable required ones
 sed -i 's/_disabled_esphomelib./_esphomelib./' homeassistant/generated/zeroconf.py
 sed -i 's/_disabled_miio./_miio./' homeassistant/generated/zeroconf.py
 
-# disabling all supported_brands
-if [ -f homeassistant/generated/supported_brands.py ]; then  # 2022.8
+if [ -f homeassistant/generated/supported_brands.py ]; then
   sed -i 's/^    /    # /' homeassistant/generated/supported_brands.py
 else
   mkdir -p homeassistant/brands-disabled/
   mv homeassistant/brands/* homeassistant/brands-disabled/
 fi
 
-# backport orjson to classic json
-# helpers
 sed -i -e 's/orjson/json/' -e 's/\.decode(.*)//' -e 's/option=.*,/\n/' -e 's/.as_posix/.as_posix()\n    if isinstance(obj, (datetime.date, datetime.time)):\n        return obj.isoformat/' -e 's/json_bytes /json_bytes_old /' -e 's/return json_bytes(data)/return _json_default_encoder(data)/' -e 's/json_fragment = .*/json_fragment = json.loads/' -e 's/mode = "wb"/mode = "w"/' homeassistant/helpers/json.py
 echo 'def json_bytes(data): return json.dumps(data, default=json_encoder_default).encode("utf-8")' >> homeassistant/helpers/json.py
-# util
 sed -i -e 's/orjson/json/' -e 's/\.decode(.*)//' -e 's/option=.*/\n/' homeassistant/util/json.py
-# aiohttp_client.py
 sed -i -e 's/orjson/json/' -e 's/\.decode(.*)//' homeassistant/helpers/aiohttp_client.py
 sed -i -E -e 's/orjson/json/g' -e 's/\.decode(.*)//' -e 's/(b64(de|en)code.*?)/\1.decode("utf-8")/' -e 's/option=option/#option=option/' -e 's/json.OPT_[A-Z_0-9]*/0/g'  homeassistant/helpers/template.py
 
-# disable aiohttp_zlib_ng
 sed -i -E -e 's/"aiohttp-zlib-ng[^"]*"//' -e 's/(dispatcher[^,]*?),/\1/' homeassistant/components/http/manifest.json
 sed -i -e 's/from aiohttp_zlib_ng/#from aiohttp_zlib_ng/' -e 's/enable_zlib_ng/#enable_zlib_ng/' homeassistant/components/http/__init__.py
 
-# fix for aiohttp < 3.9 (3.8.5 in 23.05)
-# TODO: revert https://github.com/home-assistant/core/pull/104175
 sed -i 's/, handler_cancellation=True/,  # \0/' homeassistant/components/http/__init__.py
 
-# Patch installation type
 sed -i 's/"installation_type": "Unknown"/"installation_type": "Home Assistant on OpenWrt"/' homeassistant/helpers/system_info.py
 find . -type f -exec touch {} +
 sed -i "s/[>=]=.*//g" setup.cfg
