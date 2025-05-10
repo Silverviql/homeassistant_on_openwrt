@@ -1,5 +1,5 @@
 #!/bin/sh
-# Homeassistant installer script by @devbis, modified for SONOFF Zigbee 3.0 USB Dongle Plus-E on OpenWRT 24.10.1
+# Homeassistant installer script for Nanopi 3S with SONOFF Zigbee Dongle
 
 get_ha_version()
 {
@@ -21,16 +21,6 @@ version()
 {
   local pkg=$1
   echo "$pkg==$(get_version $pkg)"
-}
-
-is_lumi_gateway()
-{
-  cat /etc/board.json | grep -E '(dgnwg05lm|zhwg11lm)' | tr -s '"' | cut -d\" -f4
-}
-
-is_gtw360()
-{
-  cat /etc/board.json | grep 'gtw360' | tr -s '"' | cut -d\" -f4
 }
 
 int_version() {
@@ -62,9 +52,6 @@ wget -q https://raw.githubusercontent.com/home-assistant/core/${HOMEASSISTANT_VE
 wget -q https://raw.githubusercontent.com/NabuCasa/hass-nabucasa/"$(get_version hass-nabucasa)"/setup.py -O - | grep '[>=]=' | sed -E 's/\s*"(.*)",?/\1/'
 ) >/tmp/ha_requirements.txt
 
-# Ensure compatible bellows version for SONOFF Zigbee 3.0 USB Dongle Plus-E
-echo "bellows>=0.36.0" >> /tmp/ha_requirements.txt
-
 HOMEASSISTANT_FRONTEND_VERSION=$(get_version home-assistant-frontend)
 NABUCASA_VER=$(get_version hass-nabucasa)
 ZIGPY_ZBOSS_VER=1.2.0
@@ -77,24 +64,12 @@ fi
 rm -rf ${STORAGE_TMP}
 
 echo "Install base requirements from feed..."
-opkg update || { echo "Error: opkg update failed. Check network and repositories."; exit 1; }
-
-# Install USB-related packages for SONOFF Zigbee 3.0 USB Dongle Plus-E
-opkg install kmod-usb-serial kmod-usb-acm usbutils
+opkg update
 
 PYTHON_VERSION=$(get_python_version)
 echo "Detected Python ${PYTHON_VERSION}"
-LUMI_GATEWAY=$(is_lumi_gateway)
-GTW360_GATEWAY=$(is_gtw360)
-# Enable ZHA for SONOFF Zigbee 3.0 USB Dongle Plus-E if USB serial port is detected
-if [ -n "$(ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null)" ]; then
-  SONOFF_ZIGBEE="true"
-else
-  SONOFF_ZIGBEE=""
-fi
-NEED_ZHA="$LUMI_GATEWAY$GTW360_GATEWAY$SONOFF_ZIGBEE"
 
-# Install them first to check Openlumi feed is added
+# Install them first to check Openlumi feed id added
 opkg install \
   python3-base \
   python3-pynacl \
@@ -167,13 +142,6 @@ opkg install \
   python3-yaml \
   python3-yarl
 
-# Verify python3-pip installation
-if ! command -v pip3 >/dev/null 2>&1; then
-  echo "Error: pip3 not found. Attempting to reinstall python3-pip..."
-  opkg update || { echo "Error: opkg update failed during pip3 reinstall. Check network and repositories."; exit 1; }
-  opkg install python3-pip || { echo "Error: Failed to install python3-pip. Check opkg repositories and available space."; exit 1; }
-fi
-
 # openwrt < 22.03 doesn't have this package
 opkg install python3-pycares 2>/dev/null || true
 if [ $BROKEN_NUMPY ]; then
@@ -192,7 +160,7 @@ rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/botocore/data
 find /usr/lib/python${PYTHON_VERSION}/site-packages/numpy -iname tests -print0 | xargs -0 rm -rf
 
 echo "Install base requirements from PyPI..."
-pip3 install --no-cache-dir --root-user-action=ignore wheel || { echo "Error: Failed to install wheel package."; exit 1; }
+pip3 install --no-cache-dir wheel
 pip3 freeze > /tmp/freeze.txt
 grep -E 'aiohttp|async-timeout|crypto|YAML' /tmp/freeze.txt > /tmp/owrt_constraints.txt
 
@@ -204,88 +172,557 @@ EOF
 
 mkdir -p ${STORAGE_TMP}
 
-TMPDIR=${STORAGE_TMP} pip3 install --no-cache-dir --no-deps --root-user-action=ignore -r /tmp/requirements_nodeps.txt
+TMPDIR=${STORAGE_TMP} pip3 install --no-cache-dir --no-deps -r /tmp/requirements_nodeps.txt
 # add zeroconf
 grep 'zeroconf' /tmp/requirements_nodeps.txt >> /tmp/owrt_constraints.txt
 # fix deps
-sed -i -e 's/cryptography\(.*\)/cryptography >=36.0.2/' -e 's/chacha20poly1305-reuseable\(.*\)/chacha20poly1305-reuseable >=0.10.0/' /usr/lib/python${PYTHON_VERSION}/site-packages/aioesphomeapi-23.0.0.dist-info/METADATA
+sed -i -e 's/cryptography\(.*\)/cryptography >=36.0.2/' -e 's/chacha20poly1305-reuseable\(.*\)/chacha20poly1305-reuseable >=0.10.0/' /usr/lib/python${PYTHON_VERSION}/site-packages/aioesphomeapi-*-info/METADATA
 
 cat << EOF > /tmp/requirements.txt
 tzdata>=2021.2.post0  # 2021.6+ requirement
 
 $(version atomicwrites-homeassistant)  # nabucasa dep
 $(version snitun)  # nabucasa dep
-$(version home-assistant-frontend)
-$(version hass-nabucasa)
+$(version astral)
+$(version awesomeversion)
+$(version PyJWT)
+$(version voluptuous)
+$(version voluptuous-serialize)
+$(version ulid-transform)  # utils
+$(version packaging)
+$(version aiohttp-fast-url-dispatcher)
+$(version psutil-home-assistant)
+$(version async-interrupt)
+
+# homeassistant manifest requirements
+$(version PyQRCode)
+$(version pyMetno)
+$(version mutagen)
+$(version pyotp)
+$(version gTTS)
+$(version janus)  # file_upload
+$(version securetar)  # backup
+$(version pyudev)  # usb
+$(version pycognito)
+$(version python-miio)  # xiaomi_miio
+$(version PyXiaomiGateway)
+$(version aiodhcpwatcher)  # dhcp
+$(version aiodiscover)  # dhcp
+$(version httpx)  # image/http
+$(version hassil)  # conversation
+$(version home-assistant-intents)  # conversation
+$(version paho-mqtt)  # mqtt
+
+# fixed dependencies
+python-jose[cryptography]==3.2.0  # (pycognito dep) 3.3.0 is not compatible with the python3-cryptography in the feed
+fnvhash==0.1.0  # replacement for fnv-hash-fast in recorder
+radios==0.1.1  # radio_browser, newer versions require orjson
+async-upnp-client==0.36.2  # 0.38 requires aiohttp>=3.9
+
+# aioesphomeapi dependencies
+noiseprotocol
+protobuf<5
+aiohappyeyeballs
+chacha20poly1305-reuseable
+
+# extra services
+hass-configurator==0.4.1
+
+# zha requirements for SONOFF Dongle
+$(version pyserial)
+$(version zha-quirks)
+$(version zigpy)
+$(version zigpy-znp)
 EOF
 
-if [ -n "${NEED_ZHA}" ]; then
-  echo "$(version zigpy-zboss)" >> /tmp/requirements.txt
-  echo "$(version bellows)" >> /tmp/requirements.txt
-  echo "$(version zigpy)" >> /tmp/requirements.txt
-  echo "$(version zha-quirks)" >> /tmp/requirements.txt
+# TMPDIR=${STORAGE_TMP} pip3 install --no-cache-dir -c /tmp/owrt_constraints.txt -r /tmp/requirements.txt
+# install one-by-one to avoid memory issues
+cat /tmp/requirements.txt | sed -E 's/\[.*\]//g' >> /tmp/owrt_constraints.txt
+while read p; do
+  pkg_with_ver=$(echo $p | awk '{gsub(/ *#.*/,"");}1')
+  if [ $pkg_with_ver ]; then
+    sh -c "TMPDIR=${STORAGE_TMP} pip3 install --no-cache-dir -c /tmp/owrt_constraints.txt \"$pkg_with_ver\""
+  fi
+done < /tmp/requirements.txt
+
+# show internal serial ports for ZHA
+sed -i 's/ttyXRUSB\*/ttymxc[1-9]/' /usr/lib/python${PYTHON_VERSION}/site-packages/serial/tools/list_ports_linux.py
+sed -i 's/if info.subsystem != "platform"]/]/' /usr/lib/python${PYTHON_VERSION}/site-packages/serial/tools/list_ports_linux.py
+
+# fix deps
+# shellcheck disable=SC2144
+if [ -f /usr/lib/python${PYTHON_VERSION}/site-packages/botocore-*-info/METADATA ]; then
+  sed -i 's/urllib3 \(.*\)/urllib3 (>=1.20)/' /usr/lib/python${PYTHON_VERSION}/site-packages/botocore-*-info/METADATA
+  sed -i 's/botocore \(.*\)/botocore (>=1.12.0)/' /usr/lib/python${PYTHON_VERSION}/site-packages/boto3-*-info/METADATA
+else
+  sed -i 's/urllib3<1.25,>=1.20/urllib3>=1.20/' /usr/lib/python${PYTHON_VERSION}/site-packages/botocore-*.egg-info/requires.txt
+  sed -i 's/botocore<1.13.0,>=1.12.135/botocore<1.13.0,>=1.12.0/' /usr/lib/python${PYTHON_VERSION}/site-packages/boto3-*.egg-info/requires.txt
+fi
+rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/pycountry/{locales,tests}
+
+echo "Install hass_nabucasa and ha-frontend..."
+wget https://github.com/NabuCasa/hass-nabucasa/archive/${NABUCASA_VER}.tar.gz -O - > hass-nabucasa-${NABUCASA_VER}.tar.gz
+tar -zxf hass-nabucasa-${NABUCASA_VER}.tar.gz
+cd hass-nabucasa-${NABUCASA_VER}
+sed -i 's/[<=>]=.*"/"/' setup.py
+rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/hass_nabucasa-*.egg
+pip3 install . --no-cache-dir -c /tmp/owrt_constraints.txt
+cd ..
+rm -rf hass-nabucasa-${NABUCASA_VER}.tar.gz hass-nabucasa-${NABUCASA_VER}
+
+# cleanup
+find /usr/lib/python${PYTHON_VERSION}/site-packages -iname tests -print0 | xargs -0 rm -rf
+
+# tmp might be small for frontend
+cd ${STORAGE_TMP}
+rm -rf home-assistant-frontend.zip home-assistant-frontend-${HOMEASSISTANT_FRONTEND_VERSION}
+rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/hass_frontend
+rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/home_assistant_frontend-*
+wget https://pypi.org/simple/home-assistant-frontend/ -O - | grep home_assistant_frontend-${HOMEASSISTANT_FRONTEND_VERSION}-py3 | cut -d '"' -f2 | xargs wget -O /tmp/home-assistant-frontend.zip
+unzip -qqo /tmp/home-assistant-frontend.zip -d home-assistant-frontend
+rm -rf /tmp/home-assistant-frontend.zip
+cd home-assistant-frontend
+find ./hass_frontend/frontend_es5 -name '*.js' -exec rm -rf {} \;
+find ./hass_frontend/frontend_es5 -name '*.map' -exec rm -rf {} \;
+find ./hass_frontend/frontend_es5 -name '*.txt' -exec rm -rf {} \;
+find ./hass_frontend/frontend_latest -name '*.js' -exec rm -rf {} \;
+find ./hass_frontend/frontend_latest -name '*.map' -exec rm -rf {} \;
+find ./hass_frontend/frontend_latest -name '*.txt' -exec rm -rf {} \;
+
+find ./hass_frontend/static/mdi -name '*.json' -maxdepth 1 -exec rm -rf {} \;
+find ./hass_frontend/static/polyfills -name '*.js' -maxdepth 1 -exec rm -rf {} \;
+find ./hass_frontend/static/polyfills -name '*.map' -maxdepth 1 -exec rm -rf {} \;
+find ./hass_frontend/static/locale-data -name '*.json' -exec rm -rf {} \;
+find ./hass_frontend/static/translations -name '*.json' -exec rm -rf {} \;
+
+# gzip all translations (and that removes unarchived files)
+for subdir in ./hass_frontend/static/translations/*; do
+  if [ -d $subdir ]; then
+    gzip -f $subdir/*.json || true
+  fi
+done
+
+mv hass_frontend /usr/lib/python${PYTHON_VERSION}/site-packages/
+mv home_assistant_frontend-${HOMEASSISTANT_FRONTEND_VERSION}.dist-info /usr/lib/python${PYTHON_VERSION}/site-packages/
+cd ..
+rm -rf home-assistant-frontend
+
+echo "Install HASS"
+pip3 install --no-cache-dir --upgrade typing-extensions || true
+
+cd /tmp
+rm -rf homeassistant.tar.gz homeassistant-${HOMEASSISTANT_VERSION} .cache pip-*
+wget https://pypi.python.org/packages/source/h/homeassistant/homeassistant-${HOMEASSISTANT_VERSION}.tar.gz -O homeassistant.tar.gz
+
+cat << EOF > /tmp/ha_components.txt
+__init__.py
+air_quality
+alarm_control_panel
+alert
+alexa
+analytics
+api
+application_credentials
+assist_pipeline
+auth
+automation
+backup
+binary_sensor
+blueprint
+brother
+button
+calendar
+camera
+climate
+cloud
+command_line
+config
+conversation
+counter
+cover
+date
+datetime
+default_config
+device_automation
+device_tracker
+dhcp
+diagnostics
+energy
+esphome
+event
+fan
+file_upload
+frontend
+geo_location
+google_assistant
+google_translate
+group
+hassio
+hardware
+history
+homeassistant
+homeassistant_alerts
+http
+humidifier
+image
+image_processing
+image_upload
+input_boolean
+input_button
+input_datetime
+input_number
+input_select
+input_text
+integration
+intent
+lawn_mower
+light
+local_todo
+lock
+logbook
+logger
+lovelace
+mailbox
+manual
+map
+media_player
+media_source
+met
+min_max
+mobile_app
+mpd
+mqtt
+my
+network
+notify
+number
+onboarding
+panel_custom
+panel_iframe
+persistent_notification
+person
+proximity
+python_script
+radio_browser
+recorder
+remote
+repairs
+rest
+safe_mode
+scene
+schedule
+script
+search
+select
+sensor
+shopping_list
+siren
+ssdp
+stream
+stt
+sun
+switch
+switch_as_x
+system_health
+system_log
+tag
+telegram
+telegram_bot
+template
+text
+time
+time_date
+timer
+todo
+trace
+tts
+update
+upnp
+usb
+vacuum
+valve
+wake_on_lan
+wake_word
+water_heater
+weather
+webhook
+websocket_api
+workday
+xiaomi_aqara
+xiaomi_miio
+yeelight
+zeroconf
+zone
+zha
+EOF
+
+# create fake structure tu get full list of components in /tmp/t/
+TMPSTRUCT=${STORAGE_TMP}/t
+rm -rf ${TMPSTRUCT}
+cd ${STORAGE_TMP}
+tar -ztf /tmp/homeassistant.tar.gz | grep '/homeassistant/components/' | sed 's/^/t\//' | xargs mkdir -p
+rx=$(sed -e 's/^/^/' -e 's/$/$/' /tmp/ha_components.txt | head -c -1 | tr '\n' '|')
+ls -1 ${TMPSTRUCT}/homeassistant-*/homeassistant/components/ | grep -v -E $rx | sed 's/^/*\/homeassistant\/components\//' > /tmp/ha_exclude.txt
+rm -rf ${TMPSTRUCT} /tmp/ha_components.txt
+
+cd /tmp
+
+# extract without components to reduce space
+tar -zxf homeassistant.tar.gz -X /tmp/ha_exclude.txt
+rm -rf /tmp/ha_exclude.txt
+
+rm -rf homeassistant.tar.gz
+cd homeassistant-${HOMEASSISTANT_VERSION}/homeassistant/
+echo '' > requirements.txt
+sed -i "s/[>=]=.*//g" package_constraints.txt
+
+# replace LRU with simple dict
+sed -i -e 's/from lru import LRU/LRU = lambda x: dict()/' -e 's/lru.get_size()/128/' -e 's/lru.set_size/pass  # \0/' helpers/template.py
+
+cd components
+
+# serve static with gzipped files
+sed -i -E 's/^( *)filepath.*?= (.*).joinpath\(filename\).resolve\(\)/\1try:\n\1    filepath = \2.joinpath(Path(str(filename) + ".gz")).resolve()\n\1    if not filepath.exists():\n\1        raise FileNotFoundError()\n\1except Exception as e:\n\1    filepath = \2.joinpath(filename).resolve()/' http/static.py
+sed -i -E 's/^( *)headers=\{/\0\n\1    **({hdrs.CONTENT_ENCODING: "gzip"} if filepath.suffix == ".gz" else {}),/' http/static.py
+
+# replace LRU with simple dict
+sed -i 's/, "lru-dict==[0-9\.]*"//' recorder/manifest.json
+sed -i 's/from lru import LRU/LRU = lambda x: dict()/' recorder/core.py
+sed -i 's/from lru import LRU/LRU = lambda x: dict()/' recorder/table_managers/event_types.py
+sed -i -e 's/from lru import LRU/LRU = lambda x: dict()/' -e 's/lru.get_size()/128/' -e 's/lru.set_size/pass  # \0/' recorder/table_managers/__init__.py
+sed -i -e 's/from lru import LRU/LRU = lambda x: dict()/' -e 's/lru.get_size()/128/' -e 's/lru.set_size/pass  # \0/' recorder/table_managers/statistics_meta.py
+sed -i 's/from lru import LRU/LRU = lambda x: dict()/' http/static.py
+sed -i 's/from lru import LRU/LRU = lambda x: dict()/' esphome/entry_data.py
+
+# relax dependencies
+sed -i 's/sqlalchemy==[0-9\.]*/sqlalchemy/i' recorder/manifest.json
+sed -i 's/pillow==[0-9\.]*/pillow/i' image_upload/manifest.json
+sed -i 's/, UnidentifiedImageError//' image_upload/__init__.py
+sed -i 's/except UnidentifiedImageError/except OSError/' image_upload/__init__.py
+sed -i 's/zeroconf==[0-9\.]*/zeroconf/i' zeroconf/manifest.json
+#sed -i 's/netdisco==[0-9\.]*/netdisco/' discovery/manifest.json
+sed -i 's/PyNaCl==[0-9\.]*/PyNaCl/i' mobile_app/manifest.json
+sed -i 's/defusedxml==[0-9\.]*/defusedxml/i' ssdp/manifest.json
+sed -i 's/netdisco==[0-9\.]*/netdisco/i' ssdp/manifest.json
+sed -i 's/radios==[0-9\.]*/radios/i' radio_browser/manifest.json
+sed -i 's/"webrtc-noise-gain==[0-9\.]*"//i' assist_pipeline/manifest.json
+
+# relax async-upnp-client versions
+sed -i 's/async-upnp-client==[0-9\.]*/async-upnp-client/i' yeelight/manifest.json
+sed -i 's/async-upnp-client==[0-9\.]*/async-upnp-client/i' upnp/manifest.json
+sed -i 's/async-upnp-client==[0-9\.]*/async-upnp-client/i' ssdp/manifest.json
+
+# remove bluetooth support from esphome
+cat esphome/manifest.json | tr '\n' '\r' | sed -E -e 's/, "bluetooth"//g' -e 's/(, )?"bleak[-_]esphome"//' -e 's/,\r    "bleak-esphome==[0-9.]*"//g' | tr '\r' '\n' > esphome/manifest-new.json
+mv esphome/manifest-new.json esphome/manifest.json
+sed -i -e 's/    config_entry.unique_id/    False/' -e 's/from homeassistant.components.bluetooth/#from homeassistant.components.bluetooth/' -e 's/async_scanner_by_source//' esphome/diagnostics.py
+sed -i 's/from.*ESPHomeBluetoothDevice.*/ESPHomeBluetoothDevice = None/' esphome/entry_data.py
+sed -i 's/from.*ESPHomeBluetoothCache.*/ESPHomeBluetoothCache = dict/' esphome/domain_data.py
+sed -i -E 's/from.*async_connect_scanner.*/async def async_connect_scanner(*args, **kwargs): pass/' esphome/manager.py
+
+# Patch mqtt component in 2022.12
+sed -i -e 's/import mqtt/\0\nfrom .util import */g' -e 's/mqtt\.util\.//' mqtt/trigger.py
+
+# drop ffmpeg requirement from tts
+sed -i 's/, "ffmpeg"//' tts/manifest.json
+sed -i 's/ ffmpeg,//' tts/__init__.py
+
+# drop matter requirement from google_assistant, it is a dependency for mobile_app
+sed -i -E 's/(\, *)?"matter"//' google_assistant/manifest.json
+
+# drop numpy dep from stream
+sed -i -e 's/"ha-av[^"]*", //' -e 's/, "numpy[^"]*"//' stream/manifest.json
+
+# soft float, like mips32 don't have numpy. Cut it off
+if ( ! ls /usr/lib/python${PYTHON_VERSION}/site-packages/ | grep -q numpy ); then
+  sed -i -e 's/import numpy as np/np = None/' -e 's/np\.ndarray/Any/g' -e 's/TRANSFORM_IMAGE_FUNCTION[orientation]//' stream/core.py
+fi
+#sed -i -e 's/import av/#/' -e 's/av.logging/#/' stream/__init__.py
+sed -i 's/import av/av = None/' stream/__init__.py
+sed -i 's/import av/av = None/' stream/worker.py
+sed -i 's/import av/av = None/' stream/recorder.py
+
+# replace c-based fnv hash
+sed -i 's/fnv-hash-fast==[0-9\.]*/fnvhash/i' recorder/manifest.json
+sed -i 's/from fnv_hash_fast/from fnvhash/' recorder/db_schema.py
+
+# remove unwanted zha requirements
+sed -i 's/"bellows==[0-9\.]*",//i' zha/manifest.json
+sed -i 's/"zigpy-cc==[0-9\.]*",//i' zha/manifest.json
+sed -i 's/"zigpy-deconz==[0-9\.]*",//i' zha/manifest.json
+sed -i 's/"zigpy-xbee==[0-9\.]*",//i' zha/manifest.json
+sed -i 's/"zigpy-znp==[0-9\.]*",//i' zha/manifest.json
+sed -i 's/"universal-silabs-flasher==[0-9\.]*",//i' zha/manifest.json
+sed -i 's/RadioType.ezsp/object()  # \0/' zha/__init__.py
+
+sed -i -E -e 's/import (bellows|zigpy_deconz|zigpy_cc|zigpy_xbee|zigpy_znp|zigpy_zigate).*application/# \0/' -e 's/([ ]*)([a-z_.]*.ControllerApplication,)/\1None # \2/g' zha/core/const.py
+sed -i -E 's/"(bellows|zigpy_deconz|zigpy_xbee|zigpy_znp|zigpy_zigate)":/# "\1":/' zha/diagnostics.py
+# sed -i -E 's/import (bellows|zigpy_deconz|zigpy_xbee|zigpy_znp)/# import \1/' zha/diagnostics.py
+sed -i -e '/from homeassistant.components.homeassistant_hardware.silabs_multiprotocol_addon/,/] = 15/d' zha/core/gateway.py
+sed -i 's/    RadioType\./    # RadioType./' zha/radio_manager.py
+sed -i 's/from bellows.config import CONF_USE_THREAD/from .core.const import CONF_USE_THREAD/' zha/radio_manager.py
+sed -i -e 's/from homeassistant.components.homeassistant_hardware import silabs_multiprotocol_addon/silabs_multiprotocol_addon = None  #/' -e 's/from homeassistant.components.homeassistant_yellow/yellow_hardware = None  #/' -e 's/ports = await hass/return await hass/' zha/config_flow.py
+
+cp zha/repairs/wrong_silabs_firmware.py zha/repairs/__wrong_silabs_firmware.py
+cat <<'EOF' > zha/repairs/wrong_silabs_firmware.py
+ISSUE_WRONG_SILABS_FIRMWARE_INSTALLED = "wrong_silabs_firmware_installed"
+async def warn_on_wrong_silabs_firmware(hass, device_path): return False
+class AlreadyRunningEZSP(Exception): pass
+EOF
+
+sed -i 's/"cloud",//' default_config/manifest.json
+sed -i 's/"dhcp",//' default_config/manifest.json
+sed -i 's/"mobile_app",//' default_config/manifest.json
+sed -i 's/"updater",//' default_config/manifest.json
+sed -i 's/"usb",//' default_config/manifest.json
+sed -i 's/"bluetooth",//' default_config/manifest.json
+sed -i 's/"assist_pipeline",//' default_config/manifest.json
+sed -i 's/"stream",//' default_config/manifest.json
+sed -i 's/==[0-9\.]*//g' frontend/manifest.json
+
+cd ../..
+# integrations and helper sections leave as is, only nested items
+sed -i 's/        "/        # "/' homeassistant/generated/config_flows.py
+sed -i 's/    # "mqtt"/    "mqtt"/' homeassistant/generated/config_flows.py
+sed -i 's/    # "esphome"/    "esphome"/' homeassistant/generated/config_flows.py
+sed -i 's/    # "met"/    "met"/' homeassistant/generated/config_flows.py
+sed -i 's/    # "radio_browser"/    "radio_browser"/' homeassistant/generated/config_flows.py
+sed -i 's/    # "zha"/    "zha"/' homeassistant/generated/config_flows.py
+
+# disabling all zeroconf services
+sed -i 's/^    "_/    "_disabled_/' homeassistant/generated/zeroconf.py
+# re-enable required ones
+sed -i 's/_disabled_esphomelib./_esphomelib./' homeassistant/generated/zeroconf.py
+sed -i 's/_disabled_miio./_miio./' homeassistant/generated/zeroconf.py
+
+# disabling all supported_brands
+if [ -f homeassistant/generated/supported_brands.py ]; then  # 2022.8
+  sed -i 's/^    /    # /' homeassistant/generated/supported_brands.py
+else
+  mkdir -p homeassistant/brands-disabled/
+  mv homeassistant/brands/* homeassistant/brands-disabled/
 fi
 
-pip3 install --no-cache-dir --constraint /tmp/owrt_constraints.txt -r /tmp/requirements.txt
+# backport orjson to classic json
+# helpers
+sed -i -e 's/orjson/json/' -e 's/\.decode(.*)//' -e 's/option=.*,/\n/' -e 's/.as_posix/.as_posix()\n    if isinstance(obj, (datetime.date, datetime.time)):\n        return obj.isoformat/' -e 's/json_bytes /json_bytes_old /' -e 's/return json_bytes(data)/return _json_default_encoder(data)/' -e 's/json_fragment = .*/json_fragment = json.loads/' -e 's/mode = "wb"/mode = "w"/' homeassistant/helpers/json.py
+echo 'def json_bytes(data): return json.dumps(data, default=json_encoder_default).encode("utf-8")' >> homeassistant/helpers/json.py
+# util
+sed -i -e 's/orjson/json/' -e 's/\.decode(.*)//' -e 's/option=.*/\n/' homeassistant/util/json.py
+# aiohttp_client.py
+sed -i -e 's/orjson/json/' -e 's/\.decode(.*)//' homeassistant/helpers/aiohttp_client.py
+sed -i -E -e 's/orjson/json/g' -e 's/\.decode(.*)//' -e 's/(b64(de|en)code.*?)/\1.decode("utf-8")/' -e 's/option=option/#option=option/' -e 's/json.OPT_[A-Z_0-9]*/0/g'  homeassistant/helpers/template.py
 
-if [ -n "${NEED_ZHA}" ]; then
-  # bellows doesn't install patched version
-  pip3 install --no-cache-dir --constraint /tmp/owrt_constraints.txt $(version bellows)
+# disable aiohttp_zlib_ng
+sed -i -E -e 's/"aiohttp-zlib-ng[^"]*"//' -e 's/(dispatcher[^,]*?),/\1/' homeassistant/components/http/manifest.json
+sed -i -e 's/from aiohttp_zlib_ng/#from aiohttp_zlib_ng/' -e 's/enable_zlib_ng/#enable_zlib_ng/' homeassistant/components/http/__init__.py
+
+# fix for aiohttp < 3.9 (3.8.5 in 23.05)
+# TODO: revert https://github.com/home-assistant/core/pull/104175
+sed -i 's/, handler_cancellation=True/,  # \0/' homeassistant/components/http/__init__.py
+
+# Patch installation type
+sed -i 's/"installation_type": "Unknown"/"installation_type": "Home Assistant on OpenWrt"/' homeassistant/helpers/system_info.py
+find . -type f -exec touch {} +
+sed -i "s/[>=]=.*//g" setup.cfg
+
+rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/homeassistant*
+
+if [ ! -f setup.py ]; then
+  awk -v RS='dependencies[^\]]*?\n\]' -v ORS= '1;NR==1{printf "dependencies = []"}' pyproject.toml > pyproject-new.toml && mv pyproject-new.toml pyproject.toml
+  sed -i -E -e 's/(setuptools)[~=]{1,2}[\.0-9]*/\1/' -e 's/(wheel)[~=]{1,2}[\.0-9]*/\1/' pyproject.toml
+else
+  sed -i 's/install_requires=REQUIRES/install_requires=[]/' setup.py
+fi
+HA_BUILD=${STORAGE_TMP}/ha-build
+mkdir -p ${HA_BUILD}
+ln -s ${HA_BUILD} ./build
+TMPDIR=${STORAGE_TMP} pip3 install . --no-cache-dir -c /tmp/owrt_constraints.txt
+cd ../
+rm -rf homeassistant-${HOMEASSISTANT_VERSION}/ ${HA_BUILD} ${STORAGE_TMP}
+
+IP=$(ip a | grep "inet .*br-lan" | cut -d " " -f6 | tail -1 | cut -d / -f1)
+if [ -z "$IP" ]; then
+  IP=$(ip a | grep "inet " | cut -d " " -f6 | tail -1 | cut -d / -f1)
 fi
 
-pip3 install --no-cache-dir --constraint /tmp/owrt_constraints.txt homeassistant==${HOMEASSISTANT_VERSION}
-
-if [ ! -d /etc/homeassistant ]; then
+if [ ! -f '/etc/homeassistant/configuration.yaml' ]; then
   mkdir -p /etc/homeassistant
-fi
-
-cat << EOF > /etc/homeassistant/configuration.yaml
+  ln -s /etc/homeassistant /root/.homeassistant
+  cat << EOF > /etc/homeassistant/configuration.yaml
 # Configure a default setup of Home Assistant (frontend, api, etc)
 default_config:
-
-http:
-  server_host: 0.0.0.0
-  server_port: 8123
 
 # Text to speech
 tts:
   - platform: google_translate
+    language: ru
+
+recorder:
+  purge_keep_days: 1
+  db_url: 'sqlite:////tmp/homeassistant.db'
+  include:
+    entity_globs:
+      - sensor.*illuminance_*
+      - sensor.*btn0_*
+      - sensor.*temperature_*
+      - sensor.*humidity_*
+      - sensor.*presence_*
+      - light.*
+
+panel_iframe:
+  configurator:
+    title: Configurator
+    icon: mdi:square-edit-outline
+    url: http://${IP}:3218
+
+group: !include groups.yaml
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
 EOF
 
-if [ -n "${NEED_ZHA}" ]; then
-  cat << EOF >> /etc/homeassistant/configuration.yaml
-
-zha:
-  zigbee_device: /dev/ttyUSB0
-EOF
+  touch /etc/homeassistant/groups.yaml
+  touch /etc/homeassistant/automations.yaml
+  touch /etc/homeassistant/scripts.yaml
+  touch /etc/homeassistant/scenes.yaml
 fi
 
-cat << EOF > /etc/init.d/homeassistant
+echo "Create starting script in init.d"
+cat << "EOF" > /etc/init.d/homeassistant
 #!/bin/sh /etc/rc.common
+
 START=99
 USE_PROCD=1
-PROG=/usr/bin/hass
-start_service() {
-  . /lib/functions.sh
-  procd_open_instance
-  procd_set_param command \$PROG --config /etc/homeassistant --script ensure_config
-  procd_set_param stdout 1
-  procd_set_param stderr 1
-  procd_set_param respawn
-  procd_close_instance
+
+start_service()
+{
+    procd_open_instance
+    procd_set_param command hass --config /etc/homeassistant --log-file /var/log/home-assistant.log --log-rotate-days 3
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
 }
 EOF
-
 chmod +x /etc/init.d/homeassistant
 /etc/init.d/homeassistant enable
 
-echo "Starting Home Assistant..."
-/etc/init.d/homeassistant start
+cat << "EOF" > /etc/init.d/hass-configurator
+#!/bin/sh /etc/rc.common
 
-sleep 5
+START=99
+USE_PROCD=1
 
-IP=$(uci get network.lan.ipaddr)
-echo "Installation complete!"
-echo "Access Home Assistant at http://$IP:8123"
-echo "ZHA configured for SONOFF Zigbee 3.0 USB Dongle Plus-E at /dev/ttyUSB0"
-echo "Check logs at /var/log/home-assistant.log if issues occur"
+start_service()
+{
+    procd_open_instance
+    procd_set_param command hass-configurator -b /etc/homeassistant
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+EOF
+chmod +x /etc/init.d/hass-configurator
+/etc/init.d/hass-configurator enable
+
+echo "Done."
