@@ -270,7 +270,7 @@ else
 fi
 rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/pycountry/{locales,tests}
 
-echo "Install hass_nabucasa and ha-frontend..."
+echo "Install hass_nabucasa..."
 wget https://github.com/NabuCasa/hass-nabucasa/archive/${NABUCASA_VER}.tar.gz -O hass-nabucasa-${NABUCASA_VER}.tar.gz
 tar -zxf hass-nabucasa-${NABUCASA_VER}.tar.gz
 cd hass-nabucasa-${NABUCASA_VER}
@@ -280,13 +280,12 @@ pip3 install . --no-cache-dir -c /tmp/owrt_constraints.txt >> /tmp/ha_install_pi
 cd ..
 rm -rf hass-nabucasa-${NABUCASA_VER}.tar.gz hass-nabucasa-${NABUCASA_VER}
 
-find /usr/lib/python${PYTHON_VERSION}/site-packages -iname tests -print0 | xargs -0 rm -rf
-
+echo "Install ha-frontend..."
 cd ${STORAGE_TMP}
 rm -rf home-assistant-frontend.zip home-assistant-frontend-${HOMEASSISTANT_FRONTEND_VERSION}
 rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/hass_frontend
 rm -rf /usr/lib/python${PYTHON_VERSION}/site-packages/home_assistant_frontend-*
-wget https://pypi.org/simple/home-assistant-frontend/ -O - | grep home-oxide_frontend-${HOMEASSISTANT_FRONTEND_VERSION}-py3 | cut -d '"' -f2 | xargs wget -O /tmp/home-assistant-frontend.zip
+wget https://pypi.org/simple/home-assistant-frontend/ -O - | grep "home_assistant_frontend-${HOMEASSISTANT_FRONTEND_VERSION}-py3" | cut -d '"' -f2 | xargs wget -O /tmp/home-assistant-frontend.zip
 unzip -qqo /tmp/home-assistant-frontend.zip -d home-assistant-frontend
 rm -rf /tmp/home-assistant-frontend.zip
 cd home-assistant-frontend
